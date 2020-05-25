@@ -38,8 +38,11 @@ pageDataToDF <- function(json){
 		from_name = unlistWithNA(json, c('from', 'name')),
 		message = unlistWithNA(json, 'message'),
 		created_time = unlistWithNA(json, 'created_time'),
-		type = unlistWithNA(json, 'type'),
-		link = unlistWithNA(json, 'link'),
+		# Deprecated in API v3.3, replaced by attachments{media_type,unshimmed_url}
+		# type = unlistWithNA(json, 'type'),
+		# link = unlistWithNA(json, 'link'),
+		type = unlistWithNA(json, c('attachments', 'data', 'media_type')),
+		link = unlistWithNA(json, c('attachments', 'data', 'unshimmed_url')),
 		id = unlistWithNA(json, 'id'),
 		story = unlistWithNA(json, 'story'),
 		likes_count = unlistWithNA(json, c('likes', 'summary', 'total_count')),
@@ -283,7 +286,7 @@ unlistWithNA <- function(lst, field){
 		vect <- rep(0, length(lst))
 		vect[notnulls] <- unlist(lapply(lst, function(x) x[[field[1]]][[field[2]]]))
 	}
-	if (length(field)==3){
+    if (length(field)==3){
 		notnulls <- unlist(lapply(lst, function(x) 
 			tryCatch(!is.null(x[[field[1]]][[field[2]]][[field[3]]]), 
 				error=function(e) FALSE)))
@@ -302,7 +305,14 @@ unlistWithNA <- function(lst, field){
 		vect <- rep(0, length(lst))
 		vect[notnulls] <- unlist(lapply(lst, function(x) x[[field[1]]][[field[2]]][[field[3]]]))
 	}
-	return(vect)
+    
+    # e.g. attachments$data[[1]]$media_type
+    if (field[1] %in% c("attachments")) {
+        notnulls <- unlist(lapply(lst, function(x) !is.null(x[[field[1]]][[field[2]]][[1]][[field[3]]])))
+        vect <- rep(0, length(lst))
+        vect[notnulls] <- unlist(lapply(lst, function(x) x[[field[1]]][[field[2]]][[1]][[field[3]]]))
+    }
+    return(vect)
 }
 
 searchPageDataToDF <- function(json){
@@ -365,11 +375,14 @@ eventDataToDF <- function(json){
 #'
 
 callAPI <- function(url, token, api=NULL){
+    # TODO: Add parameter verbose
+    # message(paste("callAPI - 1 - url=", url))
 	if (!is.null(api) & !grepl("v2\\..", url)){
 		# if api version not in URL already
 		url <- gsub("facebook.com/", paste0("facebook.com/", api, "/"), url)
 	}
-	if (class(token)[1]=="config"){
+    # message(paste("callAPI - 2 - url=", url))
+    if (class(token)[1]=="config"){
 		url.data <- GET(url, config=token)
 	}
 	if (class(token)[1]=="Token2.0"){
@@ -380,10 +393,13 @@ callAPI <- function(url, token, api=NULL){
 		url <- gsub(" ", "%20", url)
 		url.data <- GET(url)
 	}
+    # message(paste("callAPI - url.data=", url.data))
+    
 	if (class(token)[1]!="character" & class(token)[1]!="config" & class(token)[1]!="Token2.0"){
 		stop("Error in access token. See help for details.")
 	}
 	content <- rjson::fromJSON(rawToChar(url.data$content))
+	# message(paste("callAPI - content=", content))
 	if (length(content$error)>0){
 		stop(content$error$message)
 	}	
